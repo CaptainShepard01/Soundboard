@@ -86,7 +86,7 @@ If you move a sound file, its button shows **⚠ MISSING** — right-click → E
 Requires Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 
 ```powershell
-git clone https://github.com/YOUR_USERNAME/Soundboard
+git clone https://github.com/CaptainShepard01/Soundboard
 cd Soundboard
 uv sync
 uv run soundboard
