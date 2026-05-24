@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 from soundboard import __version__
 
 # ── Change this to your GitHub username/repo after creating it ──────────────
-GITHUB_REPO = "YOUR_USERNAME/Soundboard"
+GITHUB_REPO = "CaptainShepard01/Soundboard"
 # ────────────────────────────────────────────────────────────────────────────
 
 _API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
