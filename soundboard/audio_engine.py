@@ -93,14 +93,30 @@ class AudioEngine:
 
     @staticmethod
     def find_device_by_name(fragment: str) -> Optional[int]:
-        """First output device whose name contains `fragment` (case-insensitive)."""
+        """Output device whose name contains `fragment` (case-insensitive).
+
+        Prefers the WASAPI copy of a device. PortAudio exposes the same physical
+        device under several host APIs (MME, DirectSound, WASAPI, ...); the device
+        picker dedups to the WASAPI entry, so we must resolve to the same one or
+        the picker can't reselect it. WASAPI names are also untruncated, unlike
+        MME (which clips to 31 chars), so this keeps the persisted name stable.
+        """
         if not fragment:
             return None
         frag = fragment.lower()
-        for dev in AudioEngine.list_output_devices():
-            if frag in dev["name"].lower():
-                return dev["index"]
-        return None
+        matches = [d for d in AudioEngine.list_output_devices()
+                   if frag in d["name"].lower()]
+        if not matches:
+            return None
+        try:
+            hostapis = sd.query_hostapis()
+            for d in matches:
+                api = hostapis[sd.query_devices(d["index"])["hostapi"]]["name"]
+                if "wasapi" in api.lower():
+                    return d["index"]
+        except Exception:
+            pass
+        return matches[0]["index"]
 
     @staticmethod
     def device_name(index: Optional[int]) -> Optional[str]:
