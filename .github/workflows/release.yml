@@ -1,0 +1,48 @@
+name: Release
+
+# Triggers when you push a version tag like v1.2.3
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write  # needed to create the GitHub release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install project dependencies
+        run: uv sync
+
+      - name: Install PyInstaller
+        run: uv add --dev pyinstaller
+
+      - name: Build Soundboard.exe
+        run: >
+          uv run pyinstaller
+          --onefile
+          --windowed
+          --name Soundboard
+          --icon assets/icon.png
+          --add-data "assets/icon.png;assets"
+          soundboard/main.py
+
+      - name: Create GitHub Release and upload exe
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Soundboard.exe
+          generate_release_notes: true
