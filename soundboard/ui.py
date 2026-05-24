@@ -38,7 +38,6 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QCheckBox,
-    QDoubleSpinBox,
     QFrame,
 )
 
@@ -315,10 +314,11 @@ class HotkeyEdit(QLineEdit):
 # ── Sound Button ──────────────────────────────────────────────────────────────
 
 class SoundButton(QWidget):
-    """One cell in the sound grid — play button + right-click context menu."""
+    """One cell in the sound grid — play button + volume slider + context menu."""
 
     edit_requested = pyqtSignal(object)   # emits Sound
     delete_requested = pyqtSignal(object)
+    volume_changed = pyqtSignal(object)   # emits Sound after its volume is edited
 
     def __init__(self, sound: Sound, engine: AudioEngine, parent=None):
         super().__init__(parent)
@@ -329,6 +329,7 @@ class SoundButton(QWidget):
     def _build(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
         self.btn = QPushButton(self._label(), self)
         self.btn.setObjectName("soundBtn")
@@ -337,14 +338,39 @@ class SoundButton(QWidget):
         self.btn.customContextMenuRequested.connect(self._context_menu)
         layout.addWidget(self.btn)
 
+        # ── Per-sound volume mixer (mirrors the master-volume slider) ──
+        vol_row = QHBoxLayout()
+        vol_row.setContentsMargins(2, 0, 2, 0)
+        vol_row.setSpacing(4)
+        icon = QLabel("🔊")
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setRange(0, 100)
+        self.vol_slider.setValue(int(self.sound.volume * 100))
+        self.vol_slider.valueChanged.connect(self._vol_changed)
+        self.vol_pct = QLabel(f"{int(self.sound.volume * 100)}%")
+        self.vol_pct.setFixedWidth(34)
+        self.vol_pct.setStyleSheet("color: #888; font-size: 10px;")
+        vol_row.addWidget(icon)
+        vol_row.addWidget(self.vol_slider)
+        vol_row.addWidget(self.vol_pct)
+        layout.addLayout(vol_row)
+
     def _label(self) -> str:
         missing = "" if self.sound.path.exists() else "⚠ MISSING\n"
         hotkey_line = f"\n[{self.sound.hotkey}]" if self.sound.hotkey else ""
-        vol_line = f"\n🔊 {int(self.sound.volume * 100)}%"
-        return f"{missing}{self.sound.name}{hotkey_line}{vol_line}"
+        return f"{missing}{self.sound.name}{hotkey_line}"
+
+    def _vol_changed(self, value: int) -> None:
+        self.sound.volume = value / 100
+        self.vol_pct.setText(f"{value}%")
+        self.volume_changed.emit(self.sound)
 
     def refresh(self) -> None:
         self.btn.setText(self._label())
+        self.vol_slider.blockSignals(True)
+        self.vol_slider.setValue(int(self.sound.volume * 100))
+        self.vol_slider.blockSignals(False)
+        self.vol_pct.setText(f"{int(self.sound.volume * 100)}%")
 
     def _play(self) -> None:
         self.engine.stop_all()
@@ -414,11 +440,18 @@ class SoundEditDialog(QDialog):
         self.hotkey_error.hide()
         layout.addWidget(self.hotkey_error)
 
-        self.vol_spin = QDoubleSpinBox()
-        self.vol_spin.setRange(0.0, 1.0)
-        self.vol_spin.setSingleStep(0.05)
-        self.vol_spin.setValue(self.sound.volume)
-        row("Volume:", self.vol_spin)
+        vol_widget = QWidget()
+        vol_h = QHBoxLayout(vol_widget)
+        vol_h.setContentsMargins(0, 0, 0, 0)
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setRange(0, 100)
+        self.vol_slider.setValue(int(self.sound.volume * 100))
+        self.vol_pct = QLabel(f"{int(self.sound.volume * 100)}%")
+        self.vol_pct.setFixedWidth(40)
+        self.vol_slider.valueChanged.connect(lambda v: self.vol_pct.setText(f"{v}%"))
+        vol_h.addWidget(self.vol_slider)
+        vol_h.addWidget(self.vol_pct)
+        row("Volume:", vol_widget)
 
         self.loop_check = QCheckBox("Loop")
         self.loop_check.setChecked(self.sound.loop)
@@ -463,7 +496,7 @@ class SoundEditDialog(QDialog):
             self.sound.path = new_path
             self.sound.invalidate()   # drop cached PCM
         self.sound.hotkey = self.hotkey_edit.text().strip()
-        self.sound.volume = self.vol_spin.value()
+        self.sound.volume = self.vol_slider.value() / 100
         self.sound.loop = self.loop_check.isChecked()
 
 
@@ -657,6 +690,7 @@ class MainWindow(QMainWindow):
             btn = SoundButton(sound, self.engine, self.grid_container)
             btn.edit_requested.connect(self._edit_sound)
             btn.delete_requested.connect(self._delete_sound)
+            btn.volume_changed.connect(lambda _s: self._save_config())
             self.grid.addWidget(btn)
             self._sound_widgets[id(sound)] = btn
 
