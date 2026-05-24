@@ -28,8 +28,8 @@ jobs:
       - name: Install project dependencies
         run: uv sync
 
-      - name: Install PyInstaller
-        run: uv add --dev pyinstaller
+      - name: Install PyInstaller and Pillow
+        run: uv add --dev pyinstaller pillow
 
       - name: Build Soundboard.exe
         run: >
