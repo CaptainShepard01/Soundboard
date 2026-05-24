@@ -19,8 +19,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from PyQt6.QtCore import Qt, QPoint, QRect, QSize, pyqtSignal
-from PyQt6.QtGui import QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QPoint, QRect, QSize, QMimeData, pyqtSignal
+from PyQt6.QtGui import QKeySequence, QShortcut, QDrag
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -47,6 +47,10 @@ import soundboard.config as config_io
 
 
 SUPPORTED_FORMATS = "Audio Files (*.mp3 *.wav *.flac *.ogg);;All Files (*)"
+
+# Custom MIME type used for drag-to-reorder of sound buttons (kept distinct from
+# file-URL drops so dropping audio files onto the window still adds new sounds).
+REORDER_MIME = "application/x-soundboard-reorder"
 
 STYLE = """
 QMainWindow, QWidget {
@@ -313,23 +317,47 @@ class HotkeyEdit(QLineEdit):
 
 # ── Sound Button ──────────────────────────────────────────────────────────────
 
+class _DragHandle(QLabel):
+    """Grip strip at the top of a SoundButton. Grabbing it starts a reorder drag."""
+
+    def __init__(self, owner: "SoundButton"):
+        super().__init__("⠿⠿⠿")
+        self._owner = owner
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedHeight(14)
+        self.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.setStyleSheet("color: #555; font-size: 10px;")
+        self.setToolTip("Drag to reorder")
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._owner.start_drag()
+
+
 class SoundButton(QWidget):
     """One cell in the sound grid — play button + volume slider + context menu."""
 
     edit_requested = pyqtSignal(object)   # emits Sound
     delete_requested = pyqtSignal(object)
     volume_changed = pyqtSignal(object)   # emits Sound after its volume is edited
+    # emits (dragged Sound, target Sound, drop_after) when one button is dropped
+    # onto another to reorder the grid.
+    reorder_requested = pyqtSignal(object, object, bool)
 
     def __init__(self, sound: Sound, engine: AudioEngine, parent=None):
         super().__init__(parent)
         self.sound = sound
         self.engine = engine
+        self.setAcceptDrops(True)   # accept other buttons dropped on us (reorder)
         self._build()
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
+
+        self.handle = _DragHandle(self)
+        layout.addWidget(self.handle)
 
         self.btn = QPushButton(self._label(), self)
         self.btn.setObjectName("soundBtn")
@@ -394,6 +422,37 @@ class SoundButton(QWidget):
             self.edit_requested.emit(self.sound)
         elif action == del_act:
             self.delete_requested.emit(self.sound)
+
+    # ── Drag-to-reorder ──────────────────────────────────────────────────────
+
+    def start_drag(self) -> None:
+        """Begin dragging this button to a new grid position."""
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(REORDER_MIME, str(id(self.sound)).encode())
+        drag.setMimeData(mime)
+        drag.setPixmap(self.grab())            # drag a snapshot of the whole cell
+        drag.setHotSpot(self.rect().center())
+        drag.exec(Qt.DropAction.MoveAction)
+
+    def dragEnterEvent(self, event) -> None:
+        # Only react to button-reorder drags; let file-URL drops fall through to
+        # the main window (which adds them as new sounds).
+        if event.mimeData().hasFormat(REORDER_MIME):
+            event.acceptProposedAction()
+            self.setStyleSheet("QWidget { background: #2a2d34; border-radius: 6px; }")
+
+    def dragLeaveEvent(self, event) -> None:
+        self.setStyleSheet("")
+
+    def dropEvent(self, event) -> None:
+        self.setStyleSheet("")
+        if not event.mimeData().hasFormat(REORDER_MIME):
+            return
+        src_id = int(bytes(event.mimeData().data(REORDER_MIME)).decode())
+        after = event.position().x() > self.width() / 2
+        self.reorder_requested.emit(src_id, self.sound, after)
+        event.acceptProposedAction()
 
 
 # ── Sound Edit Dialog ─────────────────────────────────────────────────────────
@@ -691,8 +750,20 @@ class MainWindow(QMainWindow):
             btn.edit_requested.connect(self._edit_sound)
             btn.delete_requested.connect(self._delete_sound)
             btn.volume_changed.connect(lambda _s: self._save_config())
+            btn.reorder_requested.connect(self._reorder_sound)
             self.grid.addWidget(btn)
             self._sound_widgets[id(sound)] = btn
+
+    def _reorder_sound(self, src_id: int, dst_sound: Sound, after: bool) -> None:
+        """Move the dragged sound to just before/after the drop target."""
+        src = next((s for s in self.sounds if id(s) == src_id), None)
+        if src is None or src is dst_sound:
+            return
+        self.sounds.remove(src)
+        dst_index = self.sounds.index(dst_sound)
+        self.sounds.insert(dst_index + 1 if after else dst_index, src)
+        self._refresh_grid()
+        self._save_config()
 
     # ── Sound management ───────────────────────────────────────────────────
 
