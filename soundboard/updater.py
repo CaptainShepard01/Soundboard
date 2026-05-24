@@ -12,6 +12,7 @@ The update flow:
 """
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -118,9 +119,19 @@ def _do_update(parent, version: str, download_url: str) -> None:
         encoding="ascii",
     )
 
+    # Strip PyInstaller's onefile bootloader vars from the child environment.
+    # Otherwise the relaunched exe inherits _MEIPASS2/_PYI* (via cmd → start),
+    # skips re-extraction, and tries to reuse THIS process's temp dir — which we
+    # delete on exit → "Failed to load Python DLL python311.dll" on next launch.
+    clean_env = {
+        k: v for k, v in os.environ.items()
+        if not (k.startswith("_MEIPASS") or k.startswith("_PYI"))
+    }
+
     subprocess.Popen(
         ["cmd", "/c", str(bat)],
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NO_WINDOW,
+        env=clean_env,
     )
     QApplication.quit()
 
