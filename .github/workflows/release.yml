@@ -22,18 +22,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install uv
-        run: pip install uv
-
-      - name: Install project dependencies
-        run: uv sync
-
-      - name: Install PyInstaller and Pillow
-        run: uv add --dev pyinstaller pillow
+      # Use pip directly so PyInstaller uses the system Python and its DLLs,
+      # avoiding the DLL path issues that occur with uv's managed Python.
+      - name: Install dependencies and build tools
+        run: pip install PyQt6>=6.7.0 sounddevice>=0.5.1 miniaudio>=1.61 "numpy>=2.0.0" "keyboard>=0.13.5" pyinstaller pillow
 
       - name: Build Soundboard.exe
         run: >
-          uv run pyinstaller
+          pyinstaller
           --onefile
           --windowed
           --name Soundboard
