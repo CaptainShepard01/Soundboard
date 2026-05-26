@@ -462,6 +462,8 @@ class SoundEditDialog(QDialog):
         super().__init__(parent)
         self.sound = sound
         self._all_sounds = all_sounds
+        self._conflict: Sound | None = None   # sound whose hotkey will be stolen on save
+        self.reassigned_from: Sound | None = None
         self.setWindowTitle("Edit Sound")
         self.setMinimumWidth(380)
         self._build()
@@ -493,11 +495,20 @@ class SoundEditDialog(QDialog):
         layout.addLayout(path_row)
 
         self.hotkey_edit = row("Hotkey:", HotkeyEdit(self.sound.hotkey))
+        self.hotkey_edit.textChanged.connect(self._clear_conflict)
 
         self.hotkey_error = QLabel("")
         self.hotkey_error.setStyleSheet("color: #ff6666; font-size: 11px; padding-left: 88px;")
         self.hotkey_error.hide()
         layout.addWidget(self.hotkey_error)
+
+        # Shown only when the typed hotkey clashes with another sound — lets the
+        # user steal it instead of having to clear the other sound manually.
+        self.reassign_btn = QPushButton("")
+        self.reassign_btn.setStyleSheet("margin-left: 88px;")
+        self.reassign_btn.clicked.connect(self._do_reassign)
+        self.reassign_btn.hide()
+        layout.addWidget(self.reassign_btn)
 
         vol_widget = QWidget()
         vol_h = QHBoxLayout(vol_widget)
@@ -529,16 +540,32 @@ class SoundEditDialog(QDialog):
         btns.addWidget(save_btn)
         layout.addLayout(btns)
 
+    def _clear_conflict(self) -> None:
+        """Hide the conflict prompt whenever the hotkey field changes."""
+        self._conflict = None
+        self.hotkey_error.hide()
+        self.reassign_btn.hide()
+        self.adjustSize()
+
+    def _do_reassign(self) -> None:
+        """User confirmed stealing the hotkey from the conflicting sound."""
+        self.reassigned_from = self._conflict
+        self.accept()
+
     def _try_accept(self) -> None:
         new_hotkey = self.hotkey_edit.text().strip()
         if new_hotkey and new_hotkey != self.sound.hotkey:
             conflict = next((s for s in self._all_sounds if s is not self.sound and s.hotkey == new_hotkey), None)
             if conflict:
+                self._conflict = conflict
                 self.hotkey_error.setText(f'Already assigned to "{conflict.name}"')
                 self.hotkey_error.show()
+                self.reassign_btn.setText(f'Reassign from "{conflict.name}"')
+                self.reassign_btn.show()
                 self.adjustSize()
                 return
         self.hotkey_error.hide()
+        self.reassign_btn.hide()
         self.accept()
 
     def _browse(self) -> None:
@@ -549,6 +576,8 @@ class SoundEditDialog(QDialog):
                 self.name_edit.setText(Path(path).stem)
 
     def apply_to_sound(self) -> None:
+        if self.reassigned_from is not None and self.reassigned_from is not self.sound:
+            self.reassigned_from.hotkey = ""
         self.sound.name = self.name_edit.text().strip() or self.sound.name
         new_path = Path(self.path_edit.text().strip())
         if new_path != self.sound.path:
@@ -811,10 +840,15 @@ class MainWindow(QMainWindow):
         try:
             dlg = SoundEditDialog(sound, self.sounds, self)
             if dlg.exec() == QDialog.DialogCode.Accepted:
+                reassigned_from = dlg.reassigned_from
                 dlg.apply_to_sound()
                 widget = self._sound_widgets.get(id(sound))
                 if widget:
                     widget.refresh()
+                if reassigned_from is not None:
+                    other = self._sound_widgets.get(id(reassigned_from))
+                    if other:
+                        other.refresh()
                 self._save_config()
         finally:
             self._reregister_all_hotkeys()
