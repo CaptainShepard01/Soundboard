@@ -9,20 +9,27 @@
 #
 # Usage (run from the repo root):
 #   ./release.sh -m "commit message"              # release at current version
-#   ./release.sh -v 1.2.0 -m "commit message"     # bump version, then release
+#   ./release.sh -v patch -m "commit message"     # bump patch (lowest) part
+#   ./release.sh -v 1.2.0 -m "commit message"     # bump to an explicit version
 #
 # Options:
 #   -m, --message   Commit message (required).
-#   -v, --version   New version in MAJOR.MINOR.PATCH form. If given, updates
-#                   pyproject.toml, soundboard/__init__.py, and uv.lock first.
+#   -v, --version   New version: an explicit MAJOR.MINOR.PATCH, or one of the
+#                   keywords 'major'/'minor'/'patch' to increment that part of
+#                   the current version. Updates pyproject.toml,
+#                   soundboard/__init__.py, and uv.lock first.
 #   -h, --help      Show this help.
+#
+# Environment:
+#   GITHUB_SSH_KEY  Path to the SSH key used for the push.
+#                   Defaults to ~/.ssh/ed25519_github.
 
 set -euo pipefail
 
 MESSAGE=""
 VERSION=""
 
-usage() { sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -47,8 +54,24 @@ read_version() {  # $1=file  $2=sed-extract-pattern
 
 # ── Optional version bump ────────────────────────────────────────────────────
 if [[ -n "$VERSION" ]]; then
-    if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-        echo "error: version '$VERSION' must be MAJOR.MINOR.PATCH, e.g. 1.2.0" >&2
+    # Accept an explicit MAJOR.MINOR.PATCH, or a keyword that increments the
+    # matching component of the current version (patch resets nothing, minor
+    # resets patch, major resets minor and patch).
+    if [[ "$VERSION" =~ ^(major|minor|patch)$ ]]; then
+        CUR=$(read_version "$PYPROJECT" '^version = "(.*)"')
+        if ! [[ "$CUR" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "error: cannot bump '$VERSION': current version '$CUR' is not MAJOR.MINOR.PATCH" >&2
+            exit 1
+        fi
+        MA=${BASH_REMATCH[1]}; MI=${BASH_REMATCH[2]}; PA=${BASH_REMATCH[3]}
+        case "$VERSION" in
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+        esac
+        VERSION="$MA.$MI.$PA"
+    elif ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "error: version '$VERSION' must be MAJOR.MINOR.PATCH (e.g. 1.2.0) or one of: major minor patch" >&2
         exit 1
     fi
     echo "Bumping version to $VERSION"

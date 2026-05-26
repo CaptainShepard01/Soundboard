@@ -120,7 +120,19 @@ uv run pyinstaller --onefile --windowed --name Soundboard `
 ```
 
 Pushing a `vMAJOR.MINOR.PATCH` tag triggers the GitHub Actions workflow in
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the exe and publishes a release. The helper script `release.sh` automates the version bump, commit, tag, and push.
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the exe and publishes a release. The helper script `release.sh` automates the version bump, commit, tag, and push:
+
+```bash
+./release.sh -v patch -m "commit message"   # bump the patch (lowest) part
+./release.sh -v 1.2.3 -m "commit message"   # bump to an explicit version
+./release.sh -m "commit message"            # release at the current version
+```
+
+`-v` also accepts `minor` and `major` to bump those parts (resetting the lower
+ones to zero).
+
+The push uses SSH with the key at `~/.ssh/ed25519_github`. Point it elsewhere
+with `GITHUB_SSH_KEY=/path/to/key ./release.sh …`.
 
 ## Contributing
 
