@@ -89,6 +89,11 @@ git status --short
 git add -A
 git commit -m "$MESSAGE"
 git tag -a "$TAG" -m "$MESSAGE"
+
+# BatchMode=yes makes SSH fail fast with a real error instead of hanging on an
+# interactive prompt (host-key confirmation or key passphrase). accept-new
+# auto-trusts a new host's key on first connect rather than prompting.
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
 git push origin HEAD
 git push origin "$TAG"
 
