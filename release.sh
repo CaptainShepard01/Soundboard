@@ -93,7 +93,15 @@ git tag -a "$TAG" -m "$MESSAGE"
 # BatchMode=yes makes SSH fail fast with a real error instead of hanging on an
 # interactive prompt (host-key confirmation or key passphrase). accept-new
 # auto-trusts a new host's key on first connect rather than prompting.
-export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+# Force the GitHub key explicitly so the push works regardless of which terminal
+# launched this script — some shells don't resolve ~/.ssh/config the same way.
+# Override the path with GITHUB_SSH_KEY; skipped if the file isn't present.
+GITHUB_SSH_KEY="${GITHUB_SSH_KEY:-$HOME/.ssh/ed25519_github}"
+if [[ -f "$GITHUB_SSH_KEY" ]]; then
+    SSH_OPTS="$SSH_OPTS -i $GITHUB_SSH_KEY -o IdentitiesOnly=yes"
+fi
+export GIT_SSH_COMMAND="ssh $SSH_OPTS"
 git push origin HEAD
 git push origin "$TAG"
 
