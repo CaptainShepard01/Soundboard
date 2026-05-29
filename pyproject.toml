@@ -1,6 +1,6 @@
 [project]
 name = "soundboard"
-version = "1.2.3"
+version = "1.2.4"
 description = "Local Discord soundboard with dual audio output and global hotkeys"
 readme = "README.md"
 requires-python = ">=3.11"
